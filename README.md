@@ -38,6 +38,42 @@ end.
 
 Results reference nodes inside the queried document, so keep the document alive while using a result.
 
+## JsonSerializer
+
+`JsonSerializer.pas` converts an object graph to a `TJSONValue` via RTTI: `TJsonSerializer.Serialize(Obj)` (caller frees the result) or `SerializeToText(Obj, 2)`. Use `[JsonName('key')]` on a property to choose its JSON key. On Free Pascal put classes under `{$M+}` with `published` properties and enable `{$modeswitch prefixedattributes}`; Delphi also sees public properties.
+
+## Custom functions
+
+Register a function once, then use it in any filter. Handlers receive the evaluated arguments and return a `Func*` result:
+
+```pascal
+uses JSONPathParser, JSONPathQuery;
+
+function FnUpper(Args: TJSONPathArgs): TJSONPathFuncResult;
+begin
+  if Args.IsString(0) then
+    Result := FuncString(UpperCase(Args.AsString(0)))
+  else
+    Result := FuncNothing;
+end;
+
+function FnBetween(Args: TJSONPathArgs): TJSONPathFuncResult;
+begin
+  Result := FuncLogical((Args.AsNumber(0) >= Args.AsNumber(1)) and (Args.AsNumber(0) <= Args.AsNumber(2)));
+end;
+
+RegisterJSONPathFunction('upper',   [vtValue], vtValue, FnUpper);
+RegisterJSONPathFunction('between', [vtValue, vtValue, vtValue], vtLogical, FnBetween);
+// $[?upper(@.name) == "ANN" && between(@.age, 18, 65)]
+```
+
+* Parameter types: `vtValue` (literal, singular query or value function; `Args.IsNothing(i)` when empty), `vtNodes` (any query; `Args.NodeCount(i)` / `Args.Node(i, k)`), `vtLogical` (logical expression; `Args.AsBoolean(i)`).
+* Result types: `vtValue` (`FuncNumber`, `FuncString`, `FuncBool`, `FuncNull`, `FuncValue`, `FuncNothing`) or `vtLogical` (`FuncLogical`, usable directly as a test).
+* Handlers can be plain functions or methods (`RegisterJSONPathFunction('f', [vtValue], vtValue, Obj.Method)`). `TJSONPath.RegisterFunction` / `UnregisterFunction` are shortcuts; `IsJSONPathFunctionRegistered` checks a name.
+* Queries are type-checked against the registered signatures, exactly like the built-ins. Names follow the RFC grammar (lowercase letter, then lowercase letters, digits or `_`) and cannot reuse `length`, `count`, `match`, `search` or `value`.
+* Register at start-up (registration is not thread-safe). Unregistering or replacing a function does not affect queries that were already parsed.
+
+
 ## Tests
 
 One small console program per feature in `tests/` (`Test*.pas`, shared harness in `TestSupport.pas`).

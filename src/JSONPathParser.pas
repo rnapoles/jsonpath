@@ -36,15 +36,105 @@ uses
 
 type
   TJSONPathValueType = (vtValue, vtLogical, vtNodes);
-  TJSONPathFunctionKind = (fkLength, fkCount, fkMatch, fkSearch, fkValue);
+  TJSONPathFunctionKind = (fkLength, fkCount, fkMatch, fkSearch, fkValue, fkCustom);
   TJSONPathCompareOp = (coEq, coNe, coLt, coLe, coGt, coGe);
+
+  EJSONPathFunctionError = class(Exception);
+
+  { ---- custom function support ----
+    Register a function once (e.g. at program start) and use it in any query:
+
+      function FnUpper(Args: TJSONPathArgs): TJSONPathFuncResult;
+      begin
+        if Args.IsString(0) then
+          Result := FuncString(UpperCase(Args.AsString(0)))
+        else
+          Result := FuncNothing;
+      end;
+
+      RegisterJSONPathFunction('upper', [vtValue], vtValue, FnUpper);
+      // $[?upper(@.name) == "ANN"]
+
+    Parameter types: vtValue   = a literal, singular query or value function
+                                 (IsNothing(i) when the query selects nothing)
+                     vtNodes   = any query; read with NodeCount / Node
+                     vtLogical = a logical expression; read with AsBoolean
+    Result types:    vtValue   = return FuncNumber / FuncString / FuncBool /
+                                 FuncNull / FuncValue / FuncNothing
+                     vtLogical = return FuncLogical (usable as a test such as
+                                 $[?between(@.age, 18, 65)] ) }
+
+  { The evaluated arguments handed to a custom function }
+  TJSONPathArgs = class
+  private
+    FItems: TOwnedList;
+    function Fetch(Index: Integer): TObject;
+    function GetCount: Integer;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    { used by the evaluator }
+    procedure AddValue(AValue: TJSONValue);
+    procedure AddLogical(AValue: Boolean);
+    procedure AddNodes(const ANodes: array of TJSONValue);
+    { argument access; Index is 0-based }
+    property Count: Integer read GetCount;
+    function Kind(Index: Integer): TJSONPathValueType;
+    { vtValue arguments: True when the argument is empty (query found nothing) }
+    function IsNothing(Index: Integer): Boolean;
+    function IsString(Index: Integer): Boolean;
+    function IsNumber(Index: Integer): Boolean;
+    function IsBoolean(Index: Integer): Boolean;
+    function IsNull(Index: Integer): Boolean;
+    function IsArray(Index: Integer): Boolean;
+    function IsObject(Index: Integer): Boolean;
+    { the raw JSON value of a vtValue argument (nil when empty) }
+    function Value(Index: Integer): TJSONValue;
+    function AsString(Index: Integer; const ADefault: string = ''): string;
+    function AsNumber(Index: Integer; ADefault: Double = 0): Double;
+    function AsBoolean(Index: Integer; ADefault: Boolean = False): Boolean;
+    { vtNodes arguments }
+    function NodeCount(Index: Integer): Integer;
+    function Node(Index, NodeIndex: Integer): TJSONValue;
+  end;
+
+  TJSONPathFuncResultKind = (frNothing, frValue, frNumber, frString, frBool,
+    frNull, frLogical);
+
+  { What a custom function returns; build it with the Func* helpers below }
+  TJSONPathFuncResult = record
+    Kind: TJSONPathFuncResultKind;
+    Value: TJSONValue;
+    Num: Double;
+    Str: string;
+    Bool: Boolean;
+  end;
+
+  TJSONPathFunctionHandler = function(Args: TJSONPathArgs): TJSONPathFuncResult;
+  TJSONPathFunctionMethod = function(Args: TJSONPathArgs): TJSONPathFuncResult of object;
+
+  { A registered function. Instances are owned by the registry. }
+  TJSONPathCustomFunction = class
+  private
+    FName: string;
+    FHandler: TJSONPathFunctionHandler;
+    FMethod: TJSONPathFunctionMethod;
+  public
+    Params: array of TJSONPathValueType;
+    ResultType: TJSONPathValueType;
+    constructor Create(const AName: string;
+      const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+      AHandler: TJSONPathFunctionHandler; AMethod: TJSONPathFunctionMethod);
+    function Invoke(Args: TJSONPathArgs): TJSONPathFuncResult;
+    property Name: string read FName;
+  end;
 
   TJSONPathFunctionSignature = record
     Kind: TJSONPathFunctionKind;
     ParamCount: Integer;
-    Param0: TJSONPathValueType;
-    Param1: TJSONPathValueType;
+    Params: array of TJSONPathValueType;
     ResultType: TJSONPathValueType;
+    Custom: TJSONPathCustomFunction;
   end;
 
   { ---- AST ---- }
@@ -181,6 +271,7 @@ type
     FName: string;
     FKind: TJSONPathFunctionKind;
     FResultType: TJSONPathValueType;
+    FCustom: TJSONPathCustomFunction;
     FArgs: TOwnedList;
     function GetArgumentCount: Integer;
     function GetArgument(Index: Integer): TJSONPathExpression;
@@ -190,6 +281,8 @@ type
     procedure AddArgument(AArgument: TJSONPathExpression);
     property Name: string read FName;
     property FunctionKind: TJSONPathFunctionKind read FKind;
+    { the registered function when FunctionKind = fkCustom }
+    property Custom: TJSONPathCustomFunction read FCustom;
     property ResultType: TJSONPathValueType read FResultType;
     property ArgumentCount: Integer read GetArgumentCount;
     property Arguments[Index: Integer]: TJSONPathExpression read GetArgument;
@@ -242,6 +335,32 @@ type
 { Convenience wrapper; the caller owns the result. }
 function ParseJSONPath(const AQuery: string): TJSONPathQueryNode;
 function FindJSONPathFunction(const AName: string; out Sig: TJSONPathFunctionSignature): Boolean;
+
+{ Registers (or replaces) a custom function. Names follow the RFC grammar
+  (lowercase letter, then lowercase letters, digits or "_") and may not reuse
+  a built-in name (length, count, match, search, value). Result type vtNodes
+  is not supported. Raises EJSONPathFunctionError on invalid input.
+  Register functions before parsing queries that use them, and not from
+  several threads at once. }
+procedure RegisterJSONPathFunction(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionHandler); overload;
+procedure RegisterJSONPathFunction(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionMethod); overload;
+{ Returns False when no such custom function was registered. Queries that
+  were already parsed keep working with the old implementation. }
+function UnregisterJSONPathFunction(const AName: string): Boolean;
+function IsJSONPathFunctionRegistered(const AName: string): Boolean;
+
+{ result builders for custom functions }
+function FuncNothing: TJSONPathFuncResult;
+function FuncValue(AValue: TJSONValue): TJSONPathFuncResult;
+function FuncNumber(AValue: Double): TJSONPathFuncResult;
+function FuncString(const AValue: string): TJSONPathFuncResult;
+function FuncBool(AValue: Boolean): TJSONPathFuncResult;
+function FuncNull: TJSONPathFuncResult;
+function FuncLogical(AValue: Boolean): TJSONPathFuncResult;
 
 implementation
 
@@ -401,6 +520,7 @@ begin
   FName := AName;
   FKind := ASignature.Kind;
   FResultType := ASignature.ResultType;
+  FCustom := ASignature.Custom;
   FArgs := TOwnedList.Create;
 end;
 
@@ -425,44 +545,425 @@ begin
   Result := TJSONPathExpression(FArgs[Index]);
 end;
 
-{ ---- function registry (RFC 9535 section 2.4) ---- }
+{ ---- result builders ---- }
 
-function FindJSONPathFunction(const AName: string; out Sig: TJSONPathFunctionSignature): Boolean;
+function MakeFuncResult(AKind: TJSONPathFuncResultKind): TJSONPathFuncResult;
 begin
-  Result := True;
-  Sig.Kind := fkLength;
-  Sig.ParamCount := 1;
-  Sig.Param0 := vtValue;
-  Sig.Param1 := vtValue;
-  Sig.ResultType := vtValue;
-  if AName = 'length' then
+  Result.Kind := AKind;
+  Result.Value := nil;
+  Result.Num := 0;
+  Result.Str := '';
+  Result.Bool := False;
+end;
+
+function FuncNothing: TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frNothing);
+end;
+
+function FuncValue(AValue: TJSONValue): TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frValue);
+  Result.Value := AValue;
+end;
+
+function FuncNumber(AValue: Double): TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frNumber);
+  Result.Num := AValue;
+end;
+
+function FuncString(const AValue: string): TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frString);
+  Result.Str := AValue;
+end;
+
+function FuncBool(AValue: Boolean): TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frBool);
+  Result.Bool := AValue;
+end;
+
+function FuncNull: TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frNull);
+end;
+
+function FuncLogical(AValue: Boolean): TJSONPathFuncResult;
+begin
+  Result := MakeFuncResult(frLogical);
+  Result.Bool := AValue;
+end;
+
+{ ---- TJSONPathArgs ---- }
+
+type
+  TArgItem = class
+  public
+    Kind: TJSONPathValueType;
+    Value: TJSONValue;
+    Logical: Boolean;
+    Nodes: array of TJSONValue;
+  end;
+
+constructor TJSONPathArgs.Create;
+begin
+  inherited Create;
+  FItems := TOwnedList.Create;
+end;
+
+destructor TJSONPathArgs.Destroy;
+begin
+  FItems.Free;
+  inherited Destroy;
+end;
+
+function TJSONPathArgs.GetCount: Integer;
+begin
+  Result := FItems.Count;
+end;
+
+function TJSONPathArgs.Fetch(Index: Integer): TObject;
+begin
+  if (Index < 0) or (Index >= FItems.Count) then
+    raise EJSONPathFunctionError.CreateFmt(
+      'Argument index %d is out of range (the function received %d argument(s))',
+      [Index, FItems.Count]);
+  Result := FItems[Index];
+end;
+
+procedure TJSONPathArgs.AddValue(AValue: TJSONValue);
+var
+  Item: TArgItem;
+begin
+  Item := TArgItem.Create;
+  Item.Kind := vtValue;
+  Item.Value := AValue;
+  FItems.Add(Item);
+end;
+
+procedure TJSONPathArgs.AddLogical(AValue: Boolean);
+var
+  Item: TArgItem;
+begin
+  Item := TArgItem.Create;
+  Item.Kind := vtLogical;
+  Item.Logical := AValue;
+  FItems.Add(Item);
+end;
+
+procedure TJSONPathArgs.AddNodes(const ANodes: array of TJSONValue);
+var
+  Item: TArgItem;
+  I: Integer;
+begin
+  Item := TArgItem.Create;
+  Item.Kind := vtNodes;
+  SetLength(Item.Nodes, Length(ANodes));
+  for I := 0 to High(ANodes) do
+    Item.Nodes[I] := ANodes[I];
+  FItems.Add(Item);
+end;
+
+function TJSONPathArgs.Kind(Index: Integer): TJSONPathValueType;
+begin
+  Result := TArgItem(Fetch(Index)).Kind;
+end;
+
+function TJSONPathArgs.Value(Index: Integer): TJSONValue;
+var
+  Item: TArgItem;
+begin
+  Item := TArgItem(Fetch(Index));
+  if Item.Kind = vtValue then
+    Result := Item.Value
+  else
+    Result := nil;
+end;
+
+function TJSONPathArgs.IsNothing(Index: Integer): Boolean;
+begin
+  Result := Value(Index) = nil;
+end;
+
+function TJSONPathArgs.IsString(Index: Integer): Boolean;
+var
+  V: TJSONValue;
+begin
+  V := Value(Index);
+  Result := (V <> nil) and (V.Kind = jkString);
+end;
+
+function TJSONPathArgs.IsNumber(Index: Integer): Boolean;
+var
+  V: TJSONValue;
+begin
+  V := Value(Index);
+  Result := (V <> nil) and (V.Kind = jkNumber);
+end;
+
+function TJSONPathArgs.IsBoolean(Index: Integer): Boolean;
+var
+  V: TJSONValue;
+begin
+  V := Value(Index);
+  Result := (V <> nil) and (V.Kind = jkBoolean);
+end;
+
+function TJSONPathArgs.IsNull(Index: Integer): Boolean;
+var
+  V: TJSONValue;
+begin
+  V := Value(Index);
+  Result := (V <> nil) and (V.Kind = jkNull);
+end;
+
+function TJSONPathArgs.IsArray(Index: Integer): Boolean;
+var
+  V: TJSONValue;
+begin
+  V := Value(Index);
+  Result := (V <> nil) and (V.Kind = jkArray);
+end;
+
+function TJSONPathArgs.IsObject(Index: Integer): Boolean;
+var
+  V: TJSONValue;
+begin
+  V := Value(Index);
+  Result := (V <> nil) and (V.Kind = jkObject);
+end;
+
+function TJSONPathArgs.AsString(Index: Integer; const ADefault: string): string;
+begin
+  if IsString(Index) then
+    Result := Value(Index).StringValue
+  else
+    Result := ADefault;
+end;
+
+function TJSONPathArgs.AsNumber(Index: Integer; ADefault: Double): Double;
+begin
+  if IsNumber(Index) then
+    Result := Value(Index).NumberValue
+  else
+    Result := ADefault;
+end;
+
+function TJSONPathArgs.AsBoolean(Index: Integer; ADefault: Boolean): Boolean;
+var
+  Item: TArgItem;
+begin
+  Item := TArgItem(Fetch(Index));
+  if Item.Kind = vtLogical then
+    Result := Item.Logical
+  else if (Item.Kind = vtValue) and (Item.Value <> nil)
+    and (Item.Value.Kind = jkBoolean) then
+    Result := Item.Value.BoolValue
+  else
+    Result := ADefault;
+end;
+
+function TJSONPathArgs.NodeCount(Index: Integer): Integer;
+var
+  Item: TArgItem;
+begin
+  Item := TArgItem(Fetch(Index));
+  if Item.Kind = vtNodes then
+    Result := Length(Item.Nodes)
+  else
+    Result := 0;
+end;
+
+function TJSONPathArgs.Node(Index, NodeIndex: Integer): TJSONValue;
+var
+  Item: TArgItem;
+begin
+  Item := TArgItem(Fetch(Index));
+  if (Item.Kind <> vtNodes) or (NodeIndex < 0) or (NodeIndex >= Length(Item.Nodes)) then
+    raise EJSONPathFunctionError.CreateFmt(
+      'Node %d of argument %d does not exist', [NodeIndex, Index]);
+  Result := Item.Nodes[NodeIndex];
+end;
+
+{ ---- TJSONPathCustomFunction and the registry ---- }
+
+constructor TJSONPathCustomFunction.Create(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionHandler; AMethod: TJSONPathFunctionMethod);
+var
+  I: Integer;
+begin
+  inherited Create;
+  FName := AName;
+  SetLength(Params, Length(AParams));
+  for I := 0 to High(AParams) do
+    Params[I] := AParams[I];
+  ResultType := AResultType;
+  FHandler := AHandler;
+  FMethod := AMethod;
+end;
+
+function TJSONPathCustomFunction.Invoke(Args: TJSONPathArgs): TJSONPathFuncResult;
+begin
+  if Assigned(FHandler) then
+    Result := FHandler(Args)
+  else
+    Result := FMethod(Args);
+end;
+
+var
+  GCustomFunctions: TList;
+  { replaced or unregistered entries stay alive so that already-parsed queries
+    never hold a dangling pointer; they are freed at program exit }
+  GRetiredFunctions: TList;
+
+function IsBuiltinFunctionName(const AName: string): Boolean;
+begin
+  Result := (AName = 'length') or (AName = 'count') or (AName = 'match')
+    or (AName = 'search') or (AName = 'value');
+end;
+
+function IndexOfCustomFunction(const AName: string): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to GCustomFunctions.Count - 1 do
+    if TJSONPathCustomFunction(GCustomFunctions[I]).Name = AName then
+    begin
+      Result := I;
+      Exit;
+    end;
+end;
+
+function IsValidFunctionName(const AName: string): Boolean;
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := (AName <> '') and TJSONPathLexer.IsLowerAlpha(AName[1]);
+  if not Result then
+    Exit;
+  for I := 2 to Length(AName) do
   begin
-    Sig.Kind := fkLength;
-  end
-  else if AName = 'count' then
+    C := AName[I];
+    if not (TJSONPathLexer.IsLowerAlpha(C) or (C = '_') or TJSONPathLexer.IsDigit(C)) then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
+procedure InternalRegister(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionHandler; AMethod: TJSONPathFunctionMethod);
+var
+  Entry: TJSONPathCustomFunction;
+  Idx: Integer;
+begin
+  if not IsValidFunctionName(AName) then
+    raise EJSONPathFunctionError.Create('Invalid function name "' + AName +
+      '": use a lowercase letter followed by lowercase letters, digits or "_"');
+  if IsBuiltinFunctionName(AName) then
+    raise EJSONPathFunctionError.Create('"' + AName + '" is a built-in function and cannot be replaced');
+  if AResultType = vtNodes then
+    raise EJSONPathFunctionError.Create('Custom functions cannot return vtNodes');
+  Entry := TJSONPathCustomFunction.Create(AName, AParams, AResultType, AHandler, AMethod);
+  Idx := IndexOfCustomFunction(AName);
+  if Idx >= 0 then
   begin
-    Sig.Kind := fkCount;
-    Sig.Param0 := vtNodes;
-  end
-  else if AName = 'match' then
-  begin
-    Sig.Kind := fkMatch;
-    Sig.ParamCount := 2;
-    Sig.ResultType := vtLogical;
-  end
-  else if AName = 'search' then
-  begin
-    Sig.Kind := fkSearch;
-    Sig.ParamCount := 2;
-    Sig.ResultType := vtLogical;
-  end
-  else if AName = 'value' then
-  begin
-    Sig.Kind := fkValue;
-    Sig.Param0 := vtNodes;
+    GRetiredFunctions.Add(GCustomFunctions[Idx]);
+    GCustomFunctions[Idx] := Entry;
   end
   else
-    Result := False;
+    GCustomFunctions.Add(Entry);
+end;
+
+procedure RegisterJSONPathFunction(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionHandler);
+begin
+  if not Assigned(AHandler) then
+    raise EJSONPathFunctionError.Create('A handler is required for function "' + AName + '"');
+  InternalRegister(AName, AParams, AResultType, AHandler, nil);
+end;
+
+procedure RegisterJSONPathFunction(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionMethod);
+begin
+  if not Assigned(AHandler) then
+    raise EJSONPathFunctionError.Create('A handler is required for function "' + AName + '"');
+  InternalRegister(AName, AParams, AResultType, nil, AHandler);
+end;
+
+function UnregisterJSONPathFunction(const AName: string): Boolean;
+var
+  Idx: Integer;
+begin
+  Idx := IndexOfCustomFunction(AName);
+  Result := Idx >= 0;
+  if Result then
+  begin
+    GRetiredFunctions.Add(GCustomFunctions[Idx]);
+    GCustomFunctions.Delete(Idx);
+  end;
+end;
+
+function IsJSONPathFunctionRegistered(const AName: string): Boolean;
+begin
+  Result := IndexOfCustomFunction(AName) >= 0;
+end;
+
+{ ---- function lookup (RFC 9535 section 2.4 built-ins + custom functions) ---- }
+
+procedure SetBuiltin(var Sig: TJSONPathFunctionSignature; AKind: TJSONPathFunctionKind;
+  const AParams: array of TJSONPathValueType; AResult: TJSONPathValueType);
+var
+  I: Integer;
+begin
+  Sig.Kind := AKind;
+  SetLength(Sig.Params, Length(AParams));
+  for I := 0 to High(AParams) do
+    Sig.Params[I] := AParams[I];
+  Sig.ParamCount := Length(AParams);
+  Sig.ResultType := AResult;
+  Sig.Custom := nil;
+end;
+
+function FindJSONPathFunction(const AName: string; out Sig: TJSONPathFunctionSignature): Boolean;
+var
+  Idx: Integer;
+  Entry: TJSONPathCustomFunction;
+begin
+  Result := True;
+  Sig.Custom := nil;
+  if AName = 'length' then
+    SetBuiltin(Sig, fkLength, [vtValue], vtValue)
+  else if AName = 'count' then
+    SetBuiltin(Sig, fkCount, [vtNodes], vtValue)
+  else if AName = 'match' then
+    SetBuiltin(Sig, fkMatch, [vtValue, vtValue], vtLogical)
+  else if AName = 'search' then
+    SetBuiltin(Sig, fkSearch, [vtValue, vtValue], vtLogical)
+  else if AName = 'value' then
+    SetBuiltin(Sig, fkValue, [vtNodes], vtValue)
+  else
+  begin
+    Idx := IndexOfCustomFunction(AName);
+    if Idx < 0 then
+    begin
+      Result := False;
+      SetBuiltin(Sig, fkLength, [vtValue], vtValue);
+      Exit;
+    end;
+    Entry := TJSONPathCustomFunction(GCustomFunctions[Idx]);
+    SetBuiltin(Sig, fkCustom, Entry.Params, Entry.ResultType);
+    Sig.Custom := Entry;
+  end;
 end;
 
 { ---- parser implementation ---- }
@@ -1111,10 +1612,7 @@ begin
           if Index >= Sig.ParamCount then
             FLexer.FailAt(ArgStart, 'function-expr',
               'function "' + AName + '" takes ' + IntToStr(Sig.ParamCount) + ' argument(s)');
-          if Index = 0 then
-            ParamType := Sig.Param0
-          else
-            ParamType := Sig.Param1;
+          ParamType := Sig.Params[Index];
           CheckArgument(Arg, ParamType, ArgStart, AName);
           Inc(Index);
           FLexer.SkipWhitespace;
@@ -1147,5 +1645,24 @@ begin
     Parser.Free;
   end;
 end;
+
+procedure FreeRegistry;
+var
+  I: Integer;
+begin
+  for I := 0 to GCustomFunctions.Count - 1 do
+    TObject(GCustomFunctions[I]).Free;
+  for I := 0 to GRetiredFunctions.Count - 1 do
+    TObject(GRetiredFunctions[I]).Free;
+  GCustomFunctions.Free;
+  GRetiredFunctions.Free;
+end;
+
+initialization
+  GCustomFunctions := TList.Create;
+  GRetiredFunctions := TList.Create;
+
+finalization
+  FreeRegistry;
 
 end.

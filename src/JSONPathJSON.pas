@@ -65,9 +65,10 @@ function NewJSONObject: TJSONValue;
 function ParseJSON(const AText: string): TJSONValue;
 { Compact serialization }
 function JSONToText(AValue: TJSONValue): string;
-(* Pretty-printed serialization. Ident is the number of spaces per nesting
+{ Pretty-printed serialization. Ident is the number of spaces per nesting
   level; members and elements go on their own lines (LF line breaks), empty
-  arrays/objects stay as [] and {}. Ident <= 0 falls back to compact output. *)
+  arrays and objects stay on one line. Ident <= 0 falls back to compact
+  output. }
 function JSONToTextPretty(AValue: TJSONValue; Ident: Integer): string;
 function JSONQuoteString(const S: string): string;
 { Deep equality as defined by RFC 9535 section 2.3.5.2.2 }

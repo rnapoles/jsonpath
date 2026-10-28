@@ -124,7 +124,7 @@ exit /b 0
 
 rem  %1 = label that compiles one source file
 :each_source
-for %%F in (tests\Test*.pas schema\tests\Test*.pas cts\tests\Test*.pas examples\Sample*.dpr schema\samples\Sample*.pas) do (
+for %%F in (tests\Test*.pas schema\tests\Test*.pas cts\tests\Test*.pas examples\Sample*.pas schema\samples\Sample*.pas) do (
   if /i not "%%~nF"=="TestSupport" call %1 "%%F"
 )
 exit /b 0

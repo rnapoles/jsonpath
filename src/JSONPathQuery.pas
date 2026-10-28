@@ -59,6 +59,15 @@ type
     destructor Destroy; override;
     { The caller owns the returned result }
     function Evaluate(ARoot: TJSONValue): TJSONPathResult;
+    { Shortcuts for JSONPathParser.RegisterJSONPathFunction, e.g.
+        TJSONPath.RegisterFunction('upper', [vtValue], vtValue, FnUpper); }
+    class procedure RegisterFunction(const AName: string;
+      const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+      AHandler: TJSONPathFunctionHandler); overload;
+    class procedure RegisterFunction(const AName: string;
+      const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+      AHandler: TJSONPathFunctionMethod); overload;
+    class function UnregisterFunction(const AName: string): Boolean;
     property Source: string read FSource;
     property Query: TJSONPathQueryNode read FQuery;
   end;
@@ -236,6 +245,10 @@ type
     function NewList: TJPNodeList;
     function MakeChild(Parent: TJPNode; Index: Integer): TJPNode;
     function TempNumber(D: Double): TJSONValue;
+    function TempString(const S: string): TJSONValue;
+    function TempBool(B: Boolean): TJSONValue;
+    function TempNull: TJSONValue;
+    function EvalCustom(Call: TJSONPathFunctionCall; Current: TJPNode): TJPResult;
     function GetRegex(const Pattern: string): TIRegexp;
     procedure ApplySelector(Sel: TJSONPathSelector; Node: TJPNode; Output: TJPNodeList);
     procedure ApplySlice(Slice: TJSONPathSlice; Node: TJPNode; Output: TJPNodeList);
@@ -381,6 +394,91 @@ function TJPEvaluator.TempNumber(D: Double): TJSONValue;
 begin
   Result := NewJSONNumber(D);
   FTemps.Add(Result);
+end;
+
+function TJPEvaluator.TempString(const S: string): TJSONValue;
+begin
+  Result := NewJSONString(S);
+  FTemps.Add(Result);
+end;
+
+function TJPEvaluator.TempBool(B: Boolean): TJSONValue;
+begin
+  Result := NewJSONBool(B);
+  FTemps.Add(Result);
+end;
+
+function TJPEvaluator.TempNull: TJSONValue;
+begin
+  Result := NewJSONNull;
+  FTemps.Add(Result);
+end;
+
+function TJPEvaluator.EvalCustom(Call: TJSONPathFunctionCall; Current: TJPNode): TJPResult;
+var
+  Fn: TJSONPathCustomFunction;
+  Args: TJSONPathArgs;
+  A: TJPResult;
+  FR: TJSONPathFuncResult;
+  Nodes: array of TJSONValue;
+  I, K: Integer;
+begin
+  Fn := Call.Custom;
+  Args := TJSONPathArgs.Create;
+  try
+    for I := 0 to Call.ArgumentCount - 1 do
+    begin
+      A := EvalArgument(Call.Arguments[I], Fn.Params[I], Current);
+      case Fn.Params[I] of
+        vtValue:
+          if A.Kind = rkValue then
+            Args.AddValue(A.Value)
+          else
+            Args.AddValue(nil);
+        vtLogical:
+          Args.AddLogical(A.Logical);
+      else
+        begin
+          SetLength(Nodes, 0);
+          if A.Kind = rkNodes then
+          begin
+            SetLength(Nodes, A.Nodes.Count);
+            for K := 0 to A.Nodes.Count - 1 do
+              Nodes[K] := A.Nodes[K].Value;
+          end;
+          Args.AddNodes(Nodes);
+        end;
+      end;
+    end;
+    FR := Fn.Invoke(Args);
+  finally
+    Args.Free;
+  end;
+  { turn the handler's answer into an evaluator result of the declared type }
+  Result := ResNothing;
+  if Fn.ResultType = vtLogical then
+  begin
+    case FR.Kind of
+      frLogical, frBool: Result := ResLogical(FR.Bool);
+      frValue:
+        Result := ResLogical((FR.Value <> nil) and (FR.Value.Kind = jkBoolean)
+          and FR.Value.BoolValue);
+    else
+      Result := ResLogical(False);
+    end;
+  end
+  else
+  begin
+    case FR.Kind of
+      frValue:
+        if FR.Value <> nil then
+          Result := ResValue(FR.Value);
+      frNumber: Result := ResValue(TempNumber(FR.Num));
+      frString: Result := ResValue(TempString(FR.Str));
+      frBool, frLogical: Result := ResValue(TempBool(FR.Bool));
+      frNull: Result := ResValue(TempNull);
+    end;
+  end;
 end;
 
 function TJPEvaluator.GetRegex(const Pattern: string): TIRegexp;
@@ -709,6 +807,8 @@ begin
         if (A0.Kind = rkNodes) and (A0.Nodes.Count = 1) then
           Result := ResValue(A0.Nodes[0].Value);
       end;
+    fkCustom:
+      Result := EvalCustom(Call, Current);
     fkMatch, fkSearch:
       begin
         Result := ResLogical(False);
@@ -770,6 +870,25 @@ begin
   finally
     Res.Free;
   end;
+end;
+
+class procedure TJSONPath.RegisterFunction(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionHandler);
+begin
+  RegisterJSONPathFunction(AName, AParams, AResultType, AHandler);
+end;
+
+class procedure TJSONPath.RegisterFunction(const AName: string;
+  const AParams: array of TJSONPathValueType; AResultType: TJSONPathValueType;
+  AHandler: TJSONPathFunctionMethod);
+begin
+  RegisterJSONPathFunction(AName, AParams, AResultType, AHandler);
+end;
+
+class function TJSONPath.UnregisterFunction(const AName: string): Boolean;
+begin
+  Result := UnregisterJSONPathFunction(AName);
 end;
 
 function JSONPathSelect(const AQuery: string; ARoot: TJSONValue): TJSONPathResult;
