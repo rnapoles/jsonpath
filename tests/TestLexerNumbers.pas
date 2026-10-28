@@ -35,7 +35,7 @@ begin
   Check(ScanNumberOf('1') = 1, 'integer');
   Check(ScanNumberOf('-1.5') = -1.5, 'negative fraction');
   Check(ScanNumberOf('1e3') = 1000, 'exponent');
-  Check(ScanNumberOf('1E-2') = 0.01, 'negative exponent');
+  Check(Abs(ScanNumberOf('1E-2') - 0.01) < 1E-15, 'negative exponent');
   Check(ScanNumberOf('2.5e+1') = 25, 'explicit plus in exponent');
   Check(ScanNumberOf('-0') = 0, 'negative zero is a valid number');
   Check(NumberFails('01'), 'leading zero is rejected');

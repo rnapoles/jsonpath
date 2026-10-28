@@ -34,6 +34,17 @@ type
     function GetItem(Index: Integer): TJSONValue;
     function GetName(Index: Integer): string;
     function IndexOfName(const AName: string): Integer;
+    function GetIsNull: Boolean;
+    function GetIsBoolean: Boolean;
+    function GetIsNumber: Boolean;
+    function GetIsInteger: Boolean;
+    function GetIsString: Boolean;
+    function GetIsArray: Boolean;
+    function GetIsObject: Boolean;
+    function GetAsBoolean: Boolean;
+    function GetAsNumber: Double;
+    function GetAsInteger: Int64;
+    function GetAsString: string;
   public
     constructor Create(AKind: TJSONKind);
     destructor Destroy; override;
@@ -52,6 +63,33 @@ type
     property Items[Index: Integer]: TJSONValue read GetItem; default;
     { Member name (objects only) }
     property Names[Index: Integer]: string read GetName;
+
+    { ---- kind tests (based on Kind) ---- }
+    property IsNull: Boolean read GetIsNull;
+    property IsBoolean: Boolean read GetIsBoolean;
+    property IsNumber: Boolean read GetIsNumber;
+    { A number without fractional part that fits into an Int64 }
+    property IsInteger: Boolean read GetIsInteger;
+    property IsString: Boolean read GetIsString;
+    property IsArray: Boolean read GetIsArray;
+    property IsObject: Boolean read GetIsObject;
+
+    { ---- lenient conversions (never raise) ----
+      A value that cannot be converted yields the default of the result
+      type (False, 0, 0 and '').
+      AsBoolean  null -> False; boolean -> itself; number -> <> 0;
+                 string -> <> ''; array/object -> Count > 0
+      AsNumber   null -> 0; boolean -> 1/0; number -> itself;
+                 string -> parsed number, 0 when it is not one;
+                 array/object -> 0
+      AsInteger  like AsNumber, truncated toward zero; 0 when the number
+                 does not fit into an Int64
+      AsString   null -> ''; boolean -> 'true'/'false'; number -> its JSON
+                 text; string -> itself; array/object -> compact JSON text }
+    property AsBoolean: Boolean read GetAsBoolean;
+    property AsNumber: Double read GetAsNumber;
+    property AsInteger: Int64 read GetAsInteger;
+    property AsString: string read GetAsString;
   end;
 
 function NewJSONNull: TJSONValue;
@@ -176,6 +214,95 @@ begin
   Idx := IndexOfName(AName);
   if Idx >= 0 then
     Result := TJSONValue(FItems[Idx]);
+end;
+
+function TJSONValue.GetIsNull: Boolean;
+begin
+  Result := FKind = jkNull;
+end;
+
+function TJSONValue.GetIsBoolean: Boolean;
+begin
+  Result := FKind = jkBoolean;
+end;
+
+function TJSONValue.GetIsNumber: Boolean;
+begin
+  Result := FKind = jkNumber;
+end;
+
+function TJSONValue.GetIsInteger: Boolean;
+begin
+  Result := (FKind = jkNumber) and (Frac(FNumber) = 0) and (Abs(FNumber) < 9.2E18);
+end;
+
+function TJSONValue.GetIsString: Boolean;
+begin
+  Result := FKind = jkString;
+end;
+
+function TJSONValue.GetIsArray: Boolean;
+begin
+  Result := FKind = jkArray;
+end;
+
+function TJSONValue.GetIsObject: Boolean;
+begin
+  Result := FKind = jkObject;
+end;
+
+function TJSONValue.GetAsBoolean: Boolean;
+begin
+  case FKind of
+    jkBoolean: Result := FBool;
+    jkNumber: Result := FNumber <> 0;
+    jkString: Result := FText <> '';
+    jkArray, jkObject: Result := Count > 0;
+  else
+    Result := False;
+  end;
+end;
+
+function TJSONValue.GetAsNumber: Double;
+var
+  D: Double;
+begin
+  Result := 0;
+  case FKind of
+    jkBoolean:
+      if FBool then
+        Result := 1;
+    jkNumber:
+      Result := FNumber;
+    jkString:
+      if TryJSONTextToDouble(Trim(FText), D) and (D = D)
+        and (D < 1.7E308) and (D > -1.7E308) then
+        Result := D;
+  end;
+end;
+
+function TJSONValue.GetAsInteger: Int64;
+var
+  D: Double;
+begin
+  D := GetAsNumber;
+  if Abs(D) < 9.2E18 then
+    Result := Trunc(D)
+  else
+    Result := 0;
+end;
+
+function TJSONValue.GetAsString: string;
+begin
+  case FKind of
+    jkBoolean:
+      if FBool then Result := 'true' else Result := 'false';
+    jkNumber: Result := DoubleToJSONText(FNumber);
+    jkString: Result := FText;
+    jkArray, jkObject: Result := JSONToText(Self);
+  else
+    Result := '';
+  end;
 end;
 
 { Factories }

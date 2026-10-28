@@ -84,6 +84,10 @@ R := V.ValidateText('{}', 'person');   // R.IsValid, R.Errors[i].Keyword / Schem
 R.Free; V.Free;
 ```
 
+## TJSONValue conversions
+
+`TJSONValue` has kind tests (`IsNull`, `IsBoolean`, `IsNumber`, `IsInteger`, `IsString`, `IsArray`, `IsObject`) and lenient conversions (`AsBoolean`, `AsNumber`, `AsInteger`, `AsString`) that never raise: a value that cannot be converted yields `False`, `0` or `''`. Rules are listed next to the properties in `JSONPathJSON.pas` (for example `AsBoolean` is False for null, `0`, `""`, empty arrays and empty objects; `AsString` of an array or object is its compact JSON text).
+
 ## Tests
 
 One small console program per feature in `tests/` (`Test*.pas`, shared harness in `TestSupport.pas`).
@@ -95,4 +99,4 @@ One small console program per feature in `tests/` (`Test*.pas`, shared harness i
 
 * I-Regexp `\p{..}` / `\P{..}` Unicode category escapes are not supported; such patterns are treated as invalid, so `match()`/`search()` return false.
 * Delphi string comparison for `<`/`>` is by UTF-16 code unit, which differs from code point order only for supplementary characters.
-* Only the five built-in functions exist; there is no extension registry.
+* Only the five built-in functions exist;
