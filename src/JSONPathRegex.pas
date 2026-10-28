@@ -45,7 +45,7 @@ type
     FProgLen: Integer;
     FClasses: TRegexClassArray;
     FClassCount: Integer;
-    function Run(const Text: TCodePointArray; FullMatch: Boolean): Boolean;
+    function Run(const Text: TCodePointArray; AnchorStart, AnchorEnd: Boolean): Boolean;
     function ClassMatches(Index: Integer; C: Cardinal): Boolean;
     procedure AddThread(var List: TIntArray; var Count: Integer;
       var Marks: TIntArray; Pc, Stamp: Integer);
@@ -58,6 +58,10 @@ type
     function IsMatch(const AText: string): Boolean;
     { RFC 9535 search(): some substring must match }
     function IsSearch(const AText: string): Boolean;
+    { Generalisation of IsMatch/IsSearch: when AnchorStart is set the match
+      must begin at the first character, when AnchorEnd is set it must end
+      at the last one. }
+    function IsFind(const AText: string; AnchorStart, AnchorEnd: Boolean): Boolean;
   end;
 
 implementation
@@ -604,7 +608,7 @@ begin
   end;
 end;
 
-function TIRegexp.Run(const Text: TCodePointArray; FullMatch: Boolean): Boolean;
+function TIRegexp.Run(const Text: TCodePointArray; AnchorStart, AnchorEnd: Boolean): Boolean;
 var
   Cur, Nxt, Marks: TIntArray;
   CurCount, NxtCount, Idx, I, Pc, N: Integer;
@@ -634,7 +638,7 @@ begin
       Ok := False;
       case FProg[Pc].Op of
         OP_MATCH:
-          if (not FullMatch) or (Idx = N) then
+          if (not AnchorEnd) or (Idx = N) then
           begin
             Result := True;
             Exit;
@@ -652,7 +656,7 @@ begin
         AddThread(Nxt, NxtCount, Marks, Pc + 1, Idx + 1);
     end;
     { for substring search a new attempt may start at every position }
-    if (not FullMatch) and (Idx < N) then
+    if (not AnchorStart) and (Idx < N) then
       AddThread(Nxt, NxtCount, Marks, 0, Idx + 1);
     Tmp := Cur;
     Cur := Nxt;
@@ -663,12 +667,17 @@ end;
 
 function TIRegexp.IsMatch(const AText: string): Boolean;
 begin
-  Result := Run(StringToCodePoints(AText), True);
+  Result := Run(StringToCodePoints(AText), True, True);
+end;
+
+function TIRegexp.IsFind(const AText: string; AnchorStart, AnchorEnd: Boolean): Boolean;
+begin
+  Result := Run(StringToCodePoints(AText), AnchorStart, AnchorEnd);
 end;
 
 function TIRegexp.IsSearch(const AText: string): Boolean;
 begin
-  Result := Run(StringToCodePoints(AText), False);
+  Result := Run(StringToCodePoints(AText), False, False);
 end;
 
 end.

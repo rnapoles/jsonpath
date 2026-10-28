@@ -73,6 +73,16 @@ RegisterJSONPathFunction('between', [vtValue, vtValue, vtValue], vtLogical, FnBe
 * Queries are type-checked against the registered signatures, exactly like the built-ins. Names follow the RFC grammar (lowercase letter, then lowercase letters, digits or `_`) and cannot reuse `length`, `count`, `match`, `search` or `value`.
 * Register at start-up (registration is not thread-safe). Unregistering or replacing a function does not affect queries that were already parsed.
 
+## JSON Schema validation
+
+`schema/` contains a modular JSON Schema framework (Draft 4, 6, 7, 2019-09, 2020-12) on top of `JSONPathJSON.pas`: draft classes, registries for custom types / formats / keywords, schema registration and file/directory loading, `$ref` resolution, collected validation errors with schema and instance locations, and return-based or exception-based error handling. See **[docs/JSON_SCHEMA.md](docs/JSON_SCHEMA.md)** for the architecture, compatibility constraints, supported/unsupported features and the extension guide. Samples are in `schema/samples`, tests in `schema/tests` (run by the same `tests` scripts).
+
+```pascal
+V := TJsonSchemaValidator.Create;
+V.RegisterSchema('person', '{"type":"object","required":["name"]}');
+R := V.ValidateText('{}', 'person');   // R.IsValid, R.Errors[i].Keyword / SchemaLocation / InstanceLocation
+R.Free; V.Free;
+```
 
 ## Tests
 

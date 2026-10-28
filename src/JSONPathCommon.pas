@@ -32,6 +32,10 @@ type
     destructor Destroy; override;
     function Add(AObject: TObject): Integer;
     procedure Replace(Index: Integer; AObject: TObject);
+    { frees the item and removes it from the list }
+    procedure Delete(Index: Integer);
+    { frees and removes every item at position NewCount or later }
+    procedure TruncateTo(NewCount: Integer);
     procedure Clear;
     property Count: Integer read GetCount;
     property Items[Index: Integer]: TObject read GetItem; default;
@@ -89,6 +93,26 @@ begin
   Old := TObject(FItems[Index]);
   FItems[Index] := Pointer(AObject);
   Old.Free;
+end;
+
+procedure TOwnedList.Delete(Index: Integer);
+var
+  Old: TObject;
+begin
+  Old := TObject(FItems[Index]);
+  FItems.Delete(Index);
+  Old.Free;
+end;
+
+procedure TOwnedList.TruncateTo(NewCount: Integer);
+var
+  I: Integer;
+begin
+  for I := FItems.Count - 1 downto NewCount do
+  begin
+    TObject(FItems[I]).Free;
+    FItems.Delete(I);
+  end;
 end;
 
 procedure TOwnedList.Clear;
