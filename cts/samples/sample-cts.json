@@ -1,0 +1,56 @@
+{
+  "tests": [
+    {
+      "name": "root node",
+      "selector": "$",
+      "document": [1, 2],
+      "result": [[1, 2]],
+      "result_paths": ["$"],
+      "tags": ["basic"]
+    },
+    {
+      "name": "name selector, dot notation",
+      "selector": "$.a",
+      "document": {"a": "x", "b": "y"},
+      "result": ["x"],
+      "result_paths": ["$['a']"],
+      "tags": ["basic", "name"]
+    },
+    {
+      "name": "wildcard on an object, member order is not defined",
+      "selector": "$.*",
+      "document": {"a": 1, "b": 2},
+      "results": [[1, 2], [2, 1]],
+      "results_paths": [["$['a']", "$['b']"], ["$['b']", "$['a']"]],
+      "tags": ["wildcard"]
+    },
+    {
+      "name": "filter with a comparison",
+      "selector": "$[?@.price < 10].title",
+      "document": [{"title": "A", "price": 8.95}, {"title": "B", "price": 12.99}],
+      "result": ["A"],
+      "result_paths": ["$[0]['title']"],
+      "tags": ["filter"]
+    },
+    {
+      "name": "descendant segment",
+      "selector": "$..a",
+      "document": {"a": 1, "o": {"a": 2}},
+      "result": [1, 2],
+      "result_paths": ["$['a']", "$['o']['a']"],
+      "tags": ["descendant"]
+    },
+    {
+      "name": "syntax error: dot without a name",
+      "selector": "$.",
+      "invalid_selector": true,
+      "tags": ["syntax"]
+    },
+    {
+      "name": "syntax error: leading whitespace",
+      "selector": " $",
+      "invalid_selector": true,
+      "tags": ["syntax"]
+    }
+  ]
+}

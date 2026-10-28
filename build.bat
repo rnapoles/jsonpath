@@ -6,8 +6,10 @@ rem  Delphi : needs RAD Studio 12+ (uses %BDS%, or the default 23.0 install dir)
 rem  FPC    : needs fpc.exe on PATH (3.2.2+)
 rem  Output : build\fpc-^<platform^>\bin   and   build\delphi-^<platform^>\bin
 rem  Built  : tests\Test*.pas, schema\tests\Test*.pas, cts\tests\Test*.pas,
-rem           samples\Sample*.pas, schema\samples\Sample*.pas
-rem  Compiler logs: build\<tag>\logs\<program>.log
+rem           samples\Sample*.pas, schema\samples\Sample*.pas and the CTS command
+rem           line runner cts\jsonpath_cts.pas
+rem  Copied next to the executables: cts.schema.json, sample-cts.json and the
+rem  sample schemas (schemas\). Compiler logs: build\<tag>\logs\<program>.log
 rem  "all" skips a toolchain that is not installed; naming one explicitly makes
 rem  a missing toolchain an error. Exit code: 0 = everything built, 1 = failure.
 rem ---------------------------------------------------------------------------
@@ -72,6 +74,7 @@ echo.
 echo === Free Pascal, %PLATFORM% =^> build\%TAG%\bin ===
 call :prepare
 call :each_source :fpc_one
+call :copy_data
 exit /b 0
 
 rem ---------------------------------------------------------------------------
@@ -115,6 +118,7 @@ echo.
 echo === Delphi, %PLATFORM% =^> build\%TAG%\bin ===
 call :prepare
 call :each_source :delphi_one
+call :copy_data
 exit /b 0
 
 rem ---------------------------------------------------------------------------
@@ -124,7 +128,7 @@ exit /b 0
 
 rem  %1 = label that compiles one source file
 :each_source
-for %%F in (tests\Test*.pas schema\tests\Test*.pas cts\tests\Test*.pas examples\Sample*.pas schema\samples\Sample*.pas) do (
+for %%F in (tests\Test*.pas schema\tests\Test*.pas cts\tests\Test*.pas samples\Sample*.pas schema\samples\Sample*.pas cts\jsonpath_cts.pas) do (
   if /i not "%%~nF"=="TestSupport" call %1 "%%F"
 )
 exit /b 0
@@ -155,4 +159,12 @@ if errorlevel 1 (
 )
 exit /b 0
 
-
+rem ---------------------------------------------------------------------------
+rem  data files the programs look for next to the executable
+:copy_data
+echo "cts\samples\sample-cts.json" "%OUT%\bin\"
+copy /y "cts\cts.schema.json" "%OUT%\bin\" >nul
+copy /y "cts\samples\sample-cts.json" "%OUT%\bin\" >nul
+if not exist "%OUT%\bin\schemas" mkdir "%OUT%\bin\schemas"
+copy /y "schema\samples\schemas\*.json" "%OUT%\bin\schemas\" >nul
+exit /b 0

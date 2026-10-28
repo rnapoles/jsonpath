@@ -47,7 +47,6 @@ echo.
 echo ### Unit tests
 for %%T in (Test*.exe) do (
   set /a TESTS+=1
-  echo "==%%~fT=="
   "%%~fT"
   if errorlevel 1 (
     set /a TFAIL+=1
@@ -59,6 +58,20 @@ echo.
 echo ### Examples ^(smoke tests^)
 rem  call :smoke ^<program^> "^<arguments^>" "^<text that must appear in the output^>" [expected exit code]
 call :smoke SampleStore "" "Sayings of the Century"
+call :smoke SampleSchemaBasics "" "schema rejected"
+call :smoke SampleSchemaExtensions "" "after override"
+call :smoke SampleSchemaErrorModes "" "EValidationError"
+call :smoke SampleSchemaFiles "schemas" "loaded 2 schema"
+call :smoke jsonpath_cts "--help" "Usage: jsonpath_cts"
+call :smoke jsonpath_cts "sample-cts.json" "Failed: 0"
+call :smoke jsonpath_cts "-f descendant sample-cts.json" "Tests: 1"
+call :smoke jsonpath_cts "-t syntax -v sample-cts.json" "Passed: 2"
+
+rem  a suite with a wrong expectation must fail with exit code 1
+echo {"tests":[{"name":"wrong result","selector":"$.a","document":{"a":1},"result":[2],"result_paths":["$['a']"]}]}>"%BIN%\failing-cts.json"
+call :smoke jsonpath_cts "failing-cts.json" "Failed: 1" 1
+rem  a missing file is a usage/file error: exit code 2
+call :smoke jsonpath_cts "no-such-suite.json" "File errors: 1" 2
 
 popd
 

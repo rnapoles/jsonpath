@@ -112,12 +112,21 @@ B.Free;
 
 Inside an object use `Put*` / `Begin*(Name)`, inside an array (or at the root) use `Add*` / `Begin*`; misuse raises `EJSONBuilderError`.
 
+## JSONPath compliance test suite runner
+
+`cts/jsonpath_cts` runs the official JSONPath Compliance Test Suite files (format of `cts/cts.schema.json`) from a file or a whole folder, validates them against the schema with the JSON Schema framework, and reports failures with selector, expected and actual results. Build with `./build_cts.sh`, run `build/cts/jsonpath_cts --help`. Details in [docs/CTS_RUNNER.md](docs/CTS_RUNNER.md).
+
 ## Tests
 
 One small console program per feature in `tests/` (`Test*.pas`, shared harness in `TestSupport.pas`).
 
-* Free Pascal: `./build.sh`
-* Delphi: `tests.bat`
+* Linux: `./build.sh`
+* Windows: `tests.bat`
+
+### Windows build and test scripts
+
+* `build.bat [fpc|delphi|all] [win32|win64]` builds every test runner, the samples and the CTS command line runner (`build\<compiler>-<platform>\bin`, logs in `build\<tag>\logs`). Delphi needs RAD Studio 12+ (`%BDS%` or the default 23.0 directory), FPC needs `fpc.exe` 3.2.2+ on the PATH. `all` skips a toolchain that is not installed.
+* `test.bat [fpc|delphi] [win32|win64]` builds, runs all unit tests and then the samples and the CTS runner as smoke tests (exit code 0 only when everything passed). Program output is kept in `build\<tag>\bin\*.out`.
 
 ## Known limitations
 
