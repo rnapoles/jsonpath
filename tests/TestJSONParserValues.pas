@@ -24,7 +24,7 @@ begin
   CheckEqualsStr('null', JSONRoundTrip('null'), 'null');
   CheckEqualsStr('true', JSONRoundTrip(' true '), 'boolean with surrounding whitespace');
   CheckEqualsStr('-12.5', JSONRoundTrip('-12.5'), 'negative decimal');
-  CheckEqualsStr('100', JSONRoundTrip('1e2'), 'exponent notation');
+  CheckEqualsStr('1e2', JSONRoundTrip('1e2'), 'numbers are written back exactly as they were parsed');
   CheckEqualsStr('"a\nb"', JSONRoundTrip('"a\nb"'), 'string escapes round-trip');
   CheckEqualsStr('[]', JSONRoundTrip('[ ]'), 'empty array');
   CheckEqualsStr('{}', JSONRoundTrip('{ }'), 'empty object');

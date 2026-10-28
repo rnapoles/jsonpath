@@ -136,7 +136,7 @@ begin
       Result := NewJSONString(GetEnumName(AValue.TypeInfo, Integer(AValue.AsOrdinal)));
   end
   else if AValue.Kind in IntegerKinds then
-    Result := NewJSONNumber(AValue.AsInt64)
+    Result := NewJSONInt64(AValue.AsInt64)
   else if AValue.Kind = tkFloat then
     Result := NewJSONNumber(AValue.AsExtended)
   else if AValue.Kind in StringKinds then

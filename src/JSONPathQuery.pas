@@ -693,7 +693,7 @@ function TJPEvaluator.CompareResults(Op: TJSONPathCompareOp; const L, R: TJPResu
     if (A.Kind <> rkValue) or (B.Kind <> rkValue) then
       Exit;
     if (A.Value.Kind = jkNumber) and (B.Value.Kind = jkNumber) then
-      Result := A.Value.NumberValue < B.Value.NumberValue
+      Result := JSONNumberCompare(A.Value, B.Value) < 0
     else if (A.Value.Kind = jkString) and (B.Value.Kind = jkString) then
       Result := CompareStr(A.Value.StringValue, B.Value.StringValue) < 0;
   end;

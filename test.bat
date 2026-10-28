@@ -47,6 +47,7 @@ echo.
 echo ### Unit tests
 for %%T in (Test*.exe) do (
   set /a TESTS+=1
+  echo "==%%~fT=="
   "%%~fT"
   if errorlevel 1 (
     set /a TFAIL+=1

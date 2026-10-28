@@ -88,6 +88,30 @@ R.Free; V.Free;
 
 `TJSONValue` has kind tests (`IsNull`, `IsBoolean`, `IsNumber`, `IsInteger`, `IsString`, `IsArray`, `IsObject`) and lenient conversions (`AsBoolean`, `AsNumber`, `AsInteger`, `AsString`) that never raise: a value that cannot be converted yields `False`, `0` or `''`. Rules are listed next to the properties in `JSONPathJSON.pas` (for example `AsBoolean` is False for null, `0`, `""`, empty arrays and empty objects; `AsString` of an array or object is its compact JSON text).
 
+## JSON model: lossless numbers, parser/writer options, builder
+
+**Lossless numbers.** A parsed number keeps its original text, its `Double` value and, when possible, an exact form: an `Int64` for integer literals (64-bit ids) and an unscaled `Int64` + scale for plain decimals (money). `1` and `1.0` stay different texts but compare equal; `9223372036854775807` survives parsing, comparison and writing; `19.99` is exactly `1999/10^2` (`TryGetDecimal`, `AsCurrency`); numbers too large or written with an exponent keep their text. Related API: `NumberText`, `IsExactInt64`, `TryGetInt64`, `TryGetDecimal`, `AsCurrency`, `NewJSONInt64`, `NewJSONDecimal`, `NewJSONNumberText`, `JSONNumberCompare`. Assigning `NumberValue` discards the exact forms.
+
+**Parser options** (`ParseJSON(Text, Options)`; presets `DefaultJSONParseOptions`, `LenientJSONParseOptions`): `AllowComments` (`//` and `/* */`), `AllowTrailingCommas`, `DuplicateKeys` (`dkLastWins`, `dkFirstWins`, `dkError`) and `MaxDepth` (default 512, counts nested arrays/objects). `EJSONPathJSONError` carries `Position` (0-based offset), `Line` and `Column` (1-based; bytes on Free Pascal, UTF-16 units on Delphi).
+
+**Writer options** (`JSONToText(Value, Options)`, preset `DefaultJSONWriteOptions`): `Indent`, `SortKeys` (UTF-16 code unit order), `EscapeNonAscii`, `OriginalNumbers` (default True: numbers are written exactly as parsed; False normalises through `Double`) and `Canonical` (RFC 8785, also `JSONCanonicalText`). Canonical numbers use IEEE doubles by definition, so integers above 2^53 are rounded in canonical output. The shortest-digits search relies on `StrToFloat` round trips and can in rare cases print one digit too many on Free Pascal (80-bit `Extended` parsing).
+
+**Fluent builder** (`TJSONBuilder`):
+
+```pascal
+B := TJSONBuilder.Create;
+Doc := B.BeginObject
+         .PutString('name', 'Ann')
+         .PutInt('id', 9223372036854775807)
+         .PutDecimal('price', 1999, 2)
+         .BeginArray('tags').AddString('a').AddString('b').EndArray
+         .BeginObject('address').PutString('city', 'Oslo').EndObject
+       .EndObject.Build;      // the caller owns Doc
+B.Free;
+```
+
+Inside an object use `Put*` / `Begin*(Name)`, inside an array (or at the root) use `Add*` / `Begin*`; misuse raises `EJSONBuilderError`.
+
 ## Tests
 
 One small console program per feature in `tests/` (`Test*.pas`, shared harness in `TestSupport.pas`).
