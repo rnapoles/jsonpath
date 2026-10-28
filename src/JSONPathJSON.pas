@@ -65,6 +65,10 @@ function NewJSONObject: TJSONValue;
 function ParseJSON(const AText: string): TJSONValue;
 { Compact serialization }
 function JSONToText(AValue: TJSONValue): string;
+(* Pretty-printed serialization. Ident is the number of spaces per nesting
+  level; members and elements go on their own lines (LF line breaks), empty
+  arrays/objects stay as [] and {}. Ident <= 0 falls back to compact output. *)
+function JSONToTextPretty(AValue: TJSONValue; Ident: Integer): string;
 function JSONQuoteString(const S: string): string;
 { Deep equality as defined by RFC 9535 section 2.3.5.2.2 }
 function JSONEquals(A, B: TJSONValue): Boolean;
@@ -430,7 +434,7 @@ var
 begin
   Node := NewJSONObject;
   try
-    Inc(FPos); { { }
+    Inc(FPos); // opening brace
     SkipWhitespace;
     if (FPos <= FLen) and (FText[FPos] = '}') then
       Inc(FPos)
@@ -595,6 +599,64 @@ begin
   else
     Result := '';
   end;
+end;
+
+procedure PrettyAppend(AValue: TJSONValue; Ident, Level: Integer; var Dest: string);
+var
+  I: Integer;
+  Pad, PadInner: string;
+begin
+  case AValue.Kind of
+    jkArray:
+      if AValue.Count = 0 then
+        Dest := Dest + '[]'
+      else
+      begin
+        Pad := StringOfChar(' ', Ident * Level);
+        PadInner := StringOfChar(' ', Ident * (Level + 1));
+        Dest := Dest + '[' + #10;
+        for I := 0 to AValue.Count - 1 do
+        begin
+          Dest := Dest + PadInner;
+          PrettyAppend(AValue[I], Ident, Level + 1, Dest);
+          if I < AValue.Count - 1 then
+            Dest := Dest + ',';
+          Dest := Dest + #10;
+        end;
+        Dest := Dest + Pad + ']';
+      end;
+    jkObject:
+      if AValue.Count = 0 then
+        Dest := Dest + '{}'
+      else
+      begin
+        Pad := StringOfChar(' ', Ident * Level);
+        PadInner := StringOfChar(' ', Ident * (Level + 1));
+        Dest := Dest + '{' + #10;
+        for I := 0 to AValue.Count - 1 do
+        begin
+          Dest := Dest + PadInner + JSONQuoteString(AValue.Names[I]) + ': ';
+          PrettyAppend(AValue[I], Ident, Level + 1, Dest);
+          if I < AValue.Count - 1 then
+            Dest := Dest + ',';
+          Dest := Dest + #10;
+        end;
+        Dest := Dest + Pad + '}';
+      end;
+  else
+    Dest := Dest + JSONToText(AValue);
+  end;
+end;
+
+function JSONToTextPretty(AValue: TJSONValue; Ident: Integer): string;
+begin
+  Result := '';
+  if AValue = nil then
+    Exit;
+  if Ident <= 0 then
+    Result := JSONToText(AValue)
+  else
+    PrettyAppend(AValue, Ident, 0, Result);
 end;
 
 function JSONEquals(A, B: TJSONValue): Boolean;

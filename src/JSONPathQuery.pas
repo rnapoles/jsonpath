@@ -40,6 +40,8 @@ type
     procedure Add(AValue: TJSONValue; const APath: string);
     { Compact JSON array of all selected values }
     function ToJSONText: string;
+    { Same array, pretty-printed with a 2-space indent and LF line breaks }
+    function JSONToTextPretty: string;
     { Normalized paths (RFC 9535 2.7) joined with ";" }
     function PathsToText: string;
     property Count: Integer read GetCount;
@@ -115,6 +117,33 @@ begin
     if I > 0 then
       Result := Result + ',';
     Result := Result + JSONToText(Values[I]);
+  end;
+  Result := Result + ']';
+end;
+
+function TJSONPathResult.JSONToTextPretty: string;
+const
+  IndentWidth = 2;
+var
+  I: Integer;
+  Pad, Item: string;
+begin
+  if Count = 0 then
+  begin
+    Result := '[]';
+    Exit;
+  end;
+  Pad := StringOfChar(' ', IndentWidth);
+  Result := '[' + #10;
+  for I := 0 to Count - 1 do
+  begin
+    { the unit-qualified call avoids resolving to this method }
+    Item := StringReplace(JSONPathJSON.JSONToTextPretty(Values[I], IndentWidth),
+      #10, #10 + Pad, [rfReplaceAll]);
+    Result := Result + Pad + Item;
+    if I < Count - 1 then
+      Result := Result + ',';
+    Result := Result + #10;
   end;
   Result := Result + ']';
 end;
