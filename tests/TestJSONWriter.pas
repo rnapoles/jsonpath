@@ -119,6 +119,21 @@ begin
   CheckEqualsStr('1.5', Canon('1.50'), 'canonical ignores OriginalNumbers');
   CheckEqualsInt($1F600, FirstKeyCodePoint(Canon('{"\uffff":1,"\ud83d\ude00":2}')),
     'canonical: UTF-16 code unit order of member names');
+  { number formatting must not depend on how FloatToStrF writes its result
+    (plain text vs. scientific notation differs between Delphi and Free Pascal) }
+  CheckEqualsStr('1', Canon('1'), 'canonical: 1 (exponent 0)');
+  CheckEqualsStr('1', Canon('1.0'), 'canonical: 1.0 (exponent 0)');
+  CheckEqualsStr('10', Canon('10'), 'canonical: 10');
+  CheckEqualsStr('0.5', Canon('0.5'), 'canonical: 0.5');
+  CheckEqualsStr('0.1', Canon('0.1'), 'canonical: 0.1');
+  CheckEqualsStr('-250', Canon('-250'), 'canonical: -250');
+  CheckEqualsStr('7', Canon('7'), 'canonical: a single digit');
+  CheckEqualsStr('123456789012', Canon('123456789012'), 'canonical: a longer integer');
+  CheckEqualsStr('0.000001', Canon('1e-6'), 'canonical: 1e-6 is still written without exponent');
+  CheckEqualsStr('1e-7', Canon('1e-7'), 'canonical: 1e-7 switches to exponent notation');
+  CheckEqualsStr('1.5e+300', Canon('1.5e300'), 'canonical: large exponents');
+  CheckEqualsStr('[1,2,3]', Canon('[1,2.0,3.00]'), 'canonical: integral values written with fractions');
+
   O := DefaultJSONWriteOptions;
   O.Canonical := True;
   O.Indent := 4;

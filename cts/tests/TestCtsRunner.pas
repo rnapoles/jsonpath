@@ -48,7 +48,7 @@ const
     '{"tests":[' +
     '{"name":"root node","selector":"$","document":[1,2],"result":[[1,2]],"result_paths":["$"]},' +
     '{"name":"child member","selector":"$.a","document":{"a":5},"result":[5],' +
-    '"result_paths":["$[''a'']"],"tags":["x"]},' +
+    '"result_paths":["$[''a'']"],"tags":["tagx"]},' +
     '{"name":"wildcard object","selector":"$.*","document":{"a":1,"b":2},' +
     '"results":[[1,2],[2,1]],"results_paths":[["$[''a'']","$[''b'']"],["$[''b'']","$[''a'']"]]},' +
     '{"name":"bad syntax","selector":"$..","invalid_selector":true}]}';
@@ -56,7 +56,7 @@ const
   FailDoc =
     '{"tests":[' +
     '{"name":"wrong result","selector":"$.a","document":{"a":5},"result":[6],' +
-    '"result_paths":["$[''a'']"],"tags":["x"]},' +
+    '"result_paths":["$[''a'']"],"tags":["tagx"]},' +
     '{"name":"wrong paths","selector":"$.a","document":{"a":5},"result":[5],"result_paths":["$[''b'']"]},' +
     '{"name":"accepted selector","selector":"$.a","invalid_selector":true},' +
     '{"name":"rejected selector","selector":"$[","document":[],"result":[],"result_paths":[]},' +
@@ -188,7 +188,7 @@ begin
     Lines.Free;
   end;
   Opts := DefaultCtsOptions;
-  Opts.TagFilter := 'x';
+  Opts.TagFilter := 'tagx';
   Lines := TLines.Create;
   try
     RunDoc(PassDoc, Opts, Lines, Stats, Stopped);

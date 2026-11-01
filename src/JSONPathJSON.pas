@@ -1365,9 +1365,10 @@ function CanonicalNumberText(ANumber: Double): string;
 var
   D, Back: Double;
   P, E, K, N, I, EPos: Integer;
-  F: Double;
   S, Mantissa, ExpPart, Digits, Body: string;
+{$IFNDEF FPC}
   FS: TFormatSettings;
+{$ENDIF}
   Neg: Boolean;
 begin
   if ANumber = 0 then
@@ -1377,18 +1378,26 @@ begin
   end;
   Neg := ANumber < 0;
   D := Abs(ANumber);
+{$IFNDEF FPC}
   FS := InvariantFormatSettings;
+{$ENDIF}
   S := '';
   for P := 1 to 17 do
   begin
+    {$IFDEF FPC}
+    Str(D:P + 7, S);
+    while (Length(S) > 0) and (S[1] = ' ') do
+      Delete(S, 1, 1);
+    {$ELSE}
     S := FloatToStrF(D, ffExponent, P, 0, FS);
+    {$ENDIF}
     if (P = 17) or (TryJSONTextToDouble(S, Back) and (Back = D)) then
       Break;
   end;
   EPos := Pos('E', UpperCase(S));
   if EPos = 0 then
   begin
-    // No exponent found, treat as E+0
+    { FPC may omit the exponent for some precisions; treat as exponent 0 }
     Mantissa := S;
     E := 0;
   end
@@ -1398,6 +1407,10 @@ begin
     ExpPart := Copy(S, EPos + 1, Length(S));
     if (ExpPart <> '') and (ExpPart[1] = '+') then
       Delete(ExpPart, 1, 1);
+    { Guard against FPC producing a decimal exponent like "1.0" }
+    EPos := Pos('.', ExpPart);
+    if EPos > 0 then
+      ExpPart := Copy(ExpPart, 1, EPos - 1);
     E := StrToInt(ExpPart);
   end;
   Digits := '';
